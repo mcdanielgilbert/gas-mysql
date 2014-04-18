@@ -30,45 +30,69 @@ var cloudSqlConn = util.getConnection("jdbc:google:rdbms://appname:instancename/
 
 
 #### Querying
+Simple Query
 ```javascript
- var id = util.query("select id from table where col1=?, col2=?", "VAL1","VAL2", conn);
- 
- var obj = util.query("select id, date from table where col1=?, col2=?", 
+ var id = util.query("select id from table where col1=?, col2=?", conn);
+ ```
+
+Passing parameters
+```javascript 
+ var obj = util.query("select id from table where col1=?, col2=?", "VAL1","VAL2",conn);
+```
+
+Passing named parameters
+```
+var id = util.query("select id from table where col1=:id, col2=:val", {id:"123",val:new Date()} conn);
+```
+
+
+Passing parameters and handling complex results
+```javascript
+var obj = util.query("select id, date from table where col1=?, col2=?", "VAL1","VAL2"
  function(resultSet){
          return {
              prop1: rs.getString(1),
              prop2: rs.getDate(2)
          }
      },
- conn);
+conn);
 ```
 
 #### Inserting
 ```javascript
+//perform simple inserts
 util.insert("insert into table(id, date) vals(?,?)", "VAL1","VAL2", conn);
+
+//or used named parameters
 util.insert("insert into table(id, date) vals(:id,:date)", {id:"1234", date:new Date()}, conn);
 ```
 
 #### Updating
 ```javascript
+//perform simple updates
 util.update("update table set id=?, date=? where col=?", "VAL1",new Date(), "VAL2" conn);
+
+//or used named parameters
 util.update("update table set id=:id, date=:date where col=:col", {id:"VAL1",date:new Date(),col: "VAL2"} conn);
 ```
 
 #### Prepared Statements
+Querying
 ```javascript
 var ps = util.prepareStatement("select id from table where col1=?, col2=?", "VAL1","VAL2", conn);
-Logger.log(ps.getString(1));
-ps.execute();
+var rs = ps.execute();
+Logger.log(rs.getString(1));
 ps.close();
 ```
+Simple Inserting/Updating
 ```javascript
 var ps = util.prepareStatement("insert into table(id, date) vals(?,?)", "VAL1","VAL2", conn);
 ps.executeUpdate();
 ps.close(); 
 ```
+Inserting/Updating using named parameters
 ```javascript
-var ps = util.prepareStatement("insert into table(id, date) vals(?,?)",  {id:"1234", date:new Date()}, conn);
+var ps = util.prepareStatement("insert into table(id, date) vals(:id,:date)",  {id:"1234", date:new Date()}, conn);
 ps.executeUpdate();
 ps.close();
 ```
@@ -127,4 +151,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ### Contact
-Clone away if you like.  This code is available as a library within the Google Apps Library, but realistically you just want the code anyhow.  You can get me at https://twitter.com/tweetingformcg.
+Clone away if you like.  This code is available as a library within the Google Apps Library, but realistically you just want the code anyhow.  You can get me at [tom.mclaughlin@mcdanielgilbert.com](tom.mclaughlin@mcdanielgilbert.com).
