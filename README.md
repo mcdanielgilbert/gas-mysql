@@ -96,7 +96,89 @@ var ps = util.prepareStatement("insert into table(id, date) vals(:id,:date)",  {
 ps.executeUpdate();
 ps.close();
 ```
+#### Proxy Functions
 
+A proxying utility is provided to handle the passthrough of JDBC connections
+to other functions.  So for example, we might have an function to look up
+email addresses in our database.
+
+```javascript
+ function getUserEmail_(userId, conn){
+	return JdbcUtil().query("select email from users where user_id=?", userId, conn);
+ };
+
+```
+
+... elsewhere in our code
+```javascript
+ var util = JdbcUtil(); 
+ var conn = util.getConnection("jdbc:mysql://192.168.0.1:3306/","schema_name","username","password");
+ var email = getUserEmail_("1234", conn);
+ conn.close();
+
+```
+
+But what if we don't want to have the connection management stuff cluttering up the 
+"business logic?"  We can move the creation of the connection elsewhere and
+bind the connection to a proxy of our original function.  The only real rule here
+is that **the function you wish to proxy must accept a connection as its last parameter.**
+The proxy isn't doing anything particularly special, just taking the connection or
+connection creation and "closuring" it together with your function.
+
+##### Binding a Connection to a Proxy
+```javascript
+//on setup
+ var util = JdbcUtil(); 
+ var conn = util.getConnection("jdbc:mysql://192.168.0.1:3306/","schema_name","username","password");
+ var getUserEmail = util.proxyJdbc(getUserEmail, conn); //expose THIS externally, then clean up conn on teardown
+```
+
+User code then calls the function
+```javascript
+var email = getUserEmail("123"); //no connection passed here; proxy has one from above
+```
+
+And then you must take care of the connection created at setup time
+```javascript
+ conn.close(); //commit or rollback as necessary
+```
+
+##### Ad Hoc Connection Management
+ Or we could have the function do some kind of ad hoc connection creation, in which case the
+ connection created by the callback given will be committed and closed within the bounds of the proxy. 
+
+```javascript
+ //expose this to the world, but hide the connection logic
+ var createConn = function(){
+    return util.getConnection("jdbc:mysql://192.168.0.1:3306/","schema_name","username","password");
+ }; 
+ var getUserEmail = util.proxyJdbc(getUserEmail, createConn);
+```
+
+ elsewhere in our code (or a caller of your library) invoking the proxied function
+will create a connection using your connection creation callback (createConn), then
+commit and close it within the bounds of the proxy.
+ 
+```javascript
+ var email = getUserEmail("1234"); //connection created, committed, and closed within the bounds of the proxy
+```
+
+#### Debug output
+Using the "pass connection last" convention and proxying access means you can
+modify the proxy creation logic however you wish if you have special manipulations
+you want to perform like auditing or logging.  Enabling SQL_DEBUG will cause
+all parameters and SQL queries to be logged to whatever is set by setLog.  Any
+parameters passed to proxied functions will also be logged.  You can alter
+logger behavior using setLogger.
+
+```javascript
+var util = JdbcUtil();
+util.setLogger(function(s){Logger.log(s)}); //This is the default behavior, but you might want to investigate logging to a spreadsheet
+```
+
+#### Limitations
+* Be mindful of the overhead required to create and close connections.  Best to batch operations together under the umbrella of a single connection wherever possible.
+* SQL_DEBUG is a little heavy-handed, so use it with caution as the overhead could be significant
 
 
 ### Allow IP Ranges
