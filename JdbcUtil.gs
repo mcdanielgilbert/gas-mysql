@@ -34,6 +34,8 @@
  * Setting the "SCRIPT_DEBUG" property will result in this object logging all parameters and queries to
  * this object's logger, which default is Logger.log.
  * 
+ * https://github.com/githubfortom/gas-mysql/blob/master/JdbcUtil.gs
+ * 
  * Copyright 2014 McDaniel Gilbert, Inc.  http://www.mcdanielgilbert.com
  */
 function JdbcUtil(){
@@ -113,7 +115,7 @@ function JdbcUtil(){
 			throw new Error(schemaProperty + " not specified in Script Properties."); 
 		}    
 
-		return this.getConnection_(url, schema, userId, password);
+		return this.getConnection(url, schema, userId, password);
 	};
 
 	/**
