@@ -3,7 +3,7 @@
  * within Google Apps Scripts.  Usage is
  * @example
  *  var util = JdbcUtil();
- *  var conn = util.getConnection();
+ *  var conn = util.getConnection("jdbc:mysql://192.168.0.1:3306/","schema_name","username","password");
  *  var id = util.query("select id from table where col1=?, col2=?", "VAL1","VAL2", conn);
  *  
  *  var obj = util.query("select id, date from table where col1=?, col2=?", 
@@ -120,7 +120,7 @@ function JdbcUtil(){
 
 	/**
 	 * If the "SQL_DEBUG" script property is set to true, will log SQL queries and their parameters to 
-     * using this object's logger.
+	 * using this object's logger.
 	 */
 	var debug=function(data){
 		var debugPropertyAsString = PropertiesService.getScriptProperties().getProperty("SQL_DEBUG");
@@ -268,14 +268,12 @@ function JdbcUtil(){
 	 * @example
 	 * var sql = 'insert into whatever(c1,c2,c3) values(:a,:b,:c)';
 	 * var params = { a:"a's value", b:"b's value", c:"c's value"};
-	 * var conn = AccessControl.getConnection_();
 	 * prepareStatement(sql,params, conn);
 	 *
 	 * Or...
 	 *
 	 * @example
 	 * var sql = 'insert into whatever(c1,c2,c3) values(?,?,?)'; //:a, :b, :c ok too
-	 * var conn = AccessControl.getConnection_();
 	 * var ps = prepareStatement(sql, "first","second","third", conn);
 	 */
 	util.prepareStatement = function(){
@@ -283,8 +281,120 @@ function JdbcUtil(){
 		return prepareJDBCThing_(conn.prepareStatement, arguments);
 	};
 
-    
-	var prepareJDBCThing_=function(fn, args){
+	/**
+	 * Utility class to create proxies around methods which take
+	 * a JDBC connection as their last parameter.  In many cases,
+	 * the scenario is that a JdbcConnection is used by multiple functions
+	 * and is passed through as though it were part of the context
+	 *
+	 * var util = JdbcUtil();
+	 * var conn = util.getConnection("jdbc:mysql://192.168.0.1:3306/","schema_name","username","password");
+	 * yourFunction("arg1","arg2", conn);
+	 * yourOtherFunction("arg1","arg2", conn);
+	 * yourOtherFunction("arg1","arg2", conn);
+	 * conn.commit();
+	 * 
+	 * However, you may wish to take the boilerplate code used to fetch a connection and commit it
+	 * and wrap it up within the function itself so it can be called without having to 
+	 * deal with this imperatively.  This could be useful if you have a library
+	 * you are exposing as a service that connects to your database, and you don't
+	 * want the outside world to have to deal with your internal connecton creation stuff.
+	 *  
+	 * If the Script Property "DB_DEBUG" is set, parameters will be logged to whatever this object's log_ is set to.
+	 * via setLogger();
+	 *
+	 * Usage:
+	 *
+	 * // some internal piece of our library (service, or app) API
+	 * function getUserEmail_(userId, conn){
+	 *	return JdbcUtil().query("select email from users where user_id=?", userId, conn);
+	 * };
+	 *
+	 * //elsewhere in our code
+	 * var util = JdbcUtil(); 
+	 * var conn = util.getConnection("jdbc:mysql://192.168.0.1:3306/","schema_name","username","password");
+	 * var email = getUserEmail_("1234", conn);
+	 * conn.close();
+	 *
+	 * We could wrap this up differently as
+	 * //on setup
+	 * var util = JdbcUtil(); 
+	 * var conn = util.getConnection("jdbc:mysql://192.168.0.1:3306/","schema_name","username","password");
+	 * var getUserEmail = util.proxyJdbc(getUserEmail, conn); //expose THIS externally, then clean up conn on tear
+	 * 
+	 * //user code
+	 * var email = getUserEmail("123"); //no connection
+	 *
+	 * //on teardown
+	 * conn.close(); //commit or rollback as necessary
+	 *
+	 * Or we could have the function do some kind of ad-hoc connection creation, in which case the
+	 * connection created by the callback given will be committed and closed within the bounds of the proxy. 
+	 * //expose this to the world, but hide the connection logic
+	 * var createConn = function(){
+	 *    return util.getConnection("jdbc:mysql://192.168.0.1:3306/","schema_name","username","password");
+	 * }; 
+	 * var getUserEmail = util.proxyJdbc(getUserEmail, createConn);
+	 * 
+	 * //elsewhere in our code, or a caller of your library
+	 * var email = getUserEmail("1234"); //connection created, committed, and closed ad-hoc in proxy 
+	 * 
+	 * 
+	 */
+	util.proxyJdbc = function(fn, connectionCreator){
+		if(!fn){
+			throw new Error ("Got " + fn + ", was expecting a function while attempting to proxy JDBC function."); 
+		}
+
+		return function(){    
+			var conn;
+
+			if(typeof connectionCreator !== 'function' &&  connectionCreator.prepareStatement){
+				//assume that what was passed was a connection
+				debug("Using connection passed at proxy creation time.");
+				conn = connectionCreator;
+			}
+
+			var connCreatedDownHere;
+			try{
+
+				if(!conn){
+					var lastArg = arguments[arguments.length - 1];
+					if(lastArg && lastArg.prepareStatement){ //not sure how else to check if this is a JdbcConnection -- try duck typing
+						debug("Using connection passed at call time.");
+						conn = lastArg;
+					} else if(connectionCreator && typeof connectionCreator === 'function'){
+						connCreatedDownHere = connectionCreator();
+
+						if(! connCreatedDownHere ){
+							throw new Error("Failed to get conn, got " + conn); 
+						}
+					} else {
+						throw new Error("So lost."); 
+					}
+				}
+				log_("passed to proxied function: " + Array.prototype.slice.apply(arguments));
+
+				Array.prototype.push.call(arguments, conn || connCreatedDownHere);
+				log_(arguments.callee.name +": " + JSON.stringify(Array.prototype.slice.apply(arguments)));
+				var result = fn.apply(null, arguments);
+				if(connCreatedDownHere){
+					connCreatedDownHere.commit();
+				}
+				return result;
+			} catch(e){
+				log_(e);
+				throw e;
+			} finally {
+				if(connCreatedDownHere){
+					debug("Closing database connection.");
+					connCreatedDownHere.close(); 
+				}
+			}
+		}
+	};
+
+	var prepareJDBCThing_ = function(fn, args){
 		if(args.length < 2){
 			throw new Error ("At least two args required in calling prepareJDBCThing_(sql,[param1,param2...],[callback],conn). Arguments were " + JSON.stringify(Array.prototype.slice.apply(args)));
 		}
