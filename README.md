@@ -4,7 +4,10 @@ gas-mysql
 Utilities for using Google Apps Script's JDBC/Google Cloud SQL services.  This might help reduce the amount of boilerplate code required to use JDBC connections in GAS.
 
 ### Usage
+
 #### Initialize the utilities
+Just copy and paste this stuff into your project, or create your own library. If you are aware of a wizzy way to do something like require('package'); within the GAS ecosystem, by all means do that (and push your solution!).
+
 ```javascript
 var util = JdbcUtil();
 ```
